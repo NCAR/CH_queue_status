@@ -29,3 +29,4 @@ against the PBS database. This also turns on test mode.
                        with a script that will echo this file for access to the same information.
 
 # Example output html table
+![alt text](https://github.com/NCAR/CH_queue_status/blob/master/CH_resource_status_table.PNG "Example table")
