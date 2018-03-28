@@ -19,7 +19,7 @@ makes use of existing files, "qstat.out", "qstat-tn1.out" and "nodestate.out" to
 against the PBS database. This also turns on test mode.
 
 # Output files
-5 output files are re-generated on each execution::
+5 output files are re-generated on each execution
    File                Command
 1) qstat.out           /opt/pbs/default/bin/qstat | grep -vi "job id" | grep ".chadmin"
 2) qstat-tn1.out       /opt/pbs/default/bin/qstat -t -n -1 | grep ".chadmin" | grep " R "
