@@ -19,14 +19,14 @@ makes use of existing files, "qstat.out", "qstat-tn1.out" and "nodestate.out" to
 against the PBS database. This also turns on test mode.
 
 # Output files
-5 output files are re-generated on each execution
-   File                Command
-1) qstat.out           /opt/pbs/default/bin/qstat | grep -vi "job id" | grep ".chadmin"
-2) qstat-tn1.out       /opt/pbs/default/bin/qstat -t -n -1 | grep ".chadmin" | grep " R "
-3) nodestate.out       /opt/pbs/default/bin/pbsnodes -a | grep state | grep -v comment | sort | uniq -c
-4) queues_table_ch.html 
-5) show_status.out     text file that mirrors queues_table_ch.html.  The intention is to provide users
-                       with a script that will echo this file for access to the same information.
+In addition to "queues_table_ch.html" 4 other files are re-generated on each execution.        
+   File Name _______________ Command      
+   qstat.out ________________ /opt/pbs/default/bin/qstat | grep -vi "job id" | grep ".chadmin"        
+   qstat-tn1.out ____________ /opt/pbs/default/bin/qstat -t -n -1 | grep ".chadmin" | grep " R "           
+   nodestate.out ___________ /opt/pbs/default/bin/pbsnodes -a | grep state | grep -v comment | sort | uniq -c           
+   show_status.out* ________ text file that mirrors queues_table_ch.html           
+   
+   *CSG will provide users with a script that will echo "show_status.out" for access to the same information.        
 
 # Example output html table
 ![alt text](https://github.com/NCAR/CH_queue_status/blob/master/CH_resource_status_table.PNG "Example table")
