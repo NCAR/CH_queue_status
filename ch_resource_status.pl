@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+r#!/usr/bin/perl
 use strict;
 #use warnings; 
 
@@ -298,7 +298,7 @@ if ($@ | ($cmds_len < 5)) {
 	
 	# forces a particular order on the queues in the table.
 	# inserts "-" in place of blanks/zeros. 
-	my @queues = qw(system premium regular economy standby special ampsrt share reservations);
+	my @queues = qw(system premium regular economy standby special ampsrt share reserved);
 	
 	my $total_reservedNodes_run = 0;     # number of reserved nodes currently in use in running jobs
 	my $total_reservedNodes_free = 0;  # number of reserved nodes currently NOT in use 
@@ -420,7 +420,7 @@ if ($@ | ($cmds_len < 5)) {
 		
 		# now process reservations that are not associated with the share queue -   
 		# combine all of them and report them as one entry labled "Reservations".
-		elsif ($queue eq "reservations") {	
+		elsif ($queue eq "reserved") {
 			my $reserv_jobs  = 0;
 			my $reserv_qued  = 0;
 			my $reserv_held  = 0;
