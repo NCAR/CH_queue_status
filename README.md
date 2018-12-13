@@ -1,8 +1,8 @@
 # CH_queue_status
 This Perl script  generates an html table showing the current node and batch queue usage on Cheyenne.
 The script is executed every 5 minutes by 'csgteam' in a cron job.
-The output html table is written to /glade/p/CSG/queue_status_ch/queues_table_ch.html and embedded
-in the CISL Resource Status page, https://www2.cisl.ucar.edu/user-support/cisl-resource-status
+The output html table is written to /glade/u/home/csgteam/scripts/queue_status_ch/queues_table_ch.html 
+and embedded in the CISL Resource Status page, https://www2.cisl.ucar.edu/user-support/cisl-resource-status
 
 # Usage
 For typical production execution:
