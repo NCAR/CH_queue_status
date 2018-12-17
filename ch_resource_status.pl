@@ -1,4 +1,4 @@
-r#!/usr/bin/perl
+#!/usr/bin/perl
 use strict;
 #use warnings; 
 
@@ -37,16 +37,16 @@ if ( $nArgs > 0 ) {
     }
 }
 
-#
+
 # Set up output file names and directories
 #
 if ($testing_mode == 1) {
 	use Cwd qw(cwd);
 	$targetdir = cwd;
-	$logfilename = $targetdir . "/" . $tmpdatestamp . ".out";
+	$logfilename = $targetdir . "/" . $tmpdatestamp . ".log";
 } else {
-	$targetdir = "/glade/p/CSG/queue_status_ch";
-	$logfilename = "/glade2/scratch2/csgteam/ch_queue_status_logs/" . $tmpdatestamp . ".out";
+	$targetdir = "/glade/u/home/csgteam/scripts/queue_status_ch";
+	$logfilename = "/glade/scratch/csgteam/ch_queue_status_logs/" . $tmpdatestamp . ".log";
 }
 
 #
@@ -73,7 +73,6 @@ open STATUSFILE, ">$targetdir/show_status.out" or die "Could not open file STATU
 
 my $qstat_out_len = 0;
 my $nodestate_out_len = 0;
-my $cmds_len = 0; 
 
 my @all_share_queue_reservations;
 my @share_queue_reservations;
@@ -100,21 +99,22 @@ eval {
 			`timeout -s SIGKILL $timeout /opt/pbs/default/bin/qstat | grep -vi "job id" | grep ".chadmin" > "$targetdir/qstat.out"`;
 			my $noop = `$sleepcmd`;
 			`timeout -s SIGKILL $timeout /opt/pbs/default/bin/qstat -t -n -1 | grep ".chadmin" | grep " R "  > "$targetdir/qstat-tn1.out"`;
-			my $noop = `$sleepcmd`;
-			`timeout -s SIGKILL $timeout /opt/pbs/default/bin/pbsnodes -a | grep state | grep -v comment | sort | uniq -c > "$targetdir/nodestate.out"`;
+			$noop = `$sleepcmd`;
+			`timeout -s SIGKILL $timeout /opt/pbs/default/bin/pbsnodes -a | grep "state = " | grep -v comment | sort | uniq -c > "$targetdir/nodestate.out"`;
+			$noop = `$sleepcmd`;
+			`timeout -s SIGKILL $timeout /opt/pbs/default/bin/pbsnodes -a > "$targetdir/pbsnodes-a.out"`;
         }
 
         $qstat_out_len = `cat $targetdir/qstat.out | wc -l`;
-        $nodestate_out_len = `cat $targetdir/nodestate.out | wc -l`;
-        $cmds_len = $qstat_out_len + $nodestate_out_len; 
+        $nodestate_out_len = `grep state $targetdir/nodestate.out | wc -l`;
 
         alarm 0;
 };
 
 
-if ($@ | ($cmds_len < 5)) {
+if ($@ | ($nodestate_out_len == 0) | ($qstat_out_len == 0)) {
 	# qstat and/or pbsnodes command timed out or did not return anything useful
-	if ( $cmds_len < 5 ) { $@ = "alarm\n";}
+	if ( ($nodestate_out_len == 0) | ($qstat_out_len == 0) ) { $@ = "alarm\n";}
 	die unless $@ eq "alarm\n"; # propagate unexpected errors
 
 	my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
@@ -145,10 +145,15 @@ if ($@ | ($cmds_len < 5)) {
 		</table>
 	};
 	close (HTMLFILE);
+	
+	print STATUSFILE "  \n";
+	print STATUSFILE " The Cheyenne job scheduling system was not responding as of $datestamp. \n";
+	print STATUSFILE " If the problem persists, users will receive email updates through our Notifier service. \n";
+	print STATUSFILE "  \n";
 	close (STATUSFILE);
 	
-	print "\nqstat and/or pbsnodes command timed out or did not return anything useful\n";
-	print "processing was aborted. \n";
+	print "\nqstat and/or pbsnodes commands timed out or did not return anything useful\n";
+	print "processing was aborted. \n\n";
 	
 } else {   # PBS commands did not time out so proceed
 	
@@ -181,6 +186,7 @@ if ($@ | ($cmds_len < 5)) {
 	my $run_prem  = `cat "$targetdir/qstat.out" | grep " R premium" | wc -l`;
 	my $run_reg   = `cat "$targetdir/qstat.out" | grep " R regular" | wc -l`;
 	my $run_econ  = `cat "$targetdir/qstat.out" | grep " R economy" | wc -l`;
+	my $run_share = `cat "$targetdir/qstat.out" | grep " R sharex"  | wc -l`;
 	my $run_stand = `cat "$targetdir/qstat.out" | grep " R standby" | wc -l`;
 	my $run_spec  = `cat "$targetdir/qstat.out" | grep " R special" | wc -l`;
 	my $run_amps  = `cat "$targetdir/qstat.out" | grep " R ampsrt"  | wc -l`;
@@ -194,62 +200,16 @@ if ($@ | ($cmds_len < 5)) {
 	print "jobs running in premium queue  = $run_prem";
 	print "jobs running in standby queue  = $run_stand";
 	print "jobs running in system queue   = $run_sys";
+	print "jobs running in share queue    = $run_share";
 	
-	$tot_jobs_running = $run_prem + $run_reg + $run_econ + $run_stand + $run_spec + $run_amps + $run_sys;
-	print "number of batch jobs running (not share or reservations) = $tot_jobs_running \n\n";
-	
-	
-	@all_reservations = `/opt/pbs/default/bin/pbs_rstat | grep ' R[0-9][0-9]' | awk '{print \$2}'`;
-	print scalar @all_reservations; print " reservations found \n";
-	print @all_reservations, "\n";
-	
-	@all_share_queue_reservations = `/opt/pbs/default/bin/qmgr -c 'p q share' | grep route_destinations | cut -f 6 -d ' '`;
-	print "all share queue reservations (may include stale reservations): \n";
-	print @all_share_queue_reservations;  print " \n";
-	
-
-	
-	# Remove bogus share queue reservations reported by qmgr - which there can be some - from @all_share_queue_reservations
-	# to create @share_queue_reservations. Valid share queue reservation names will also be in @all_reservations.
-	my %count_share = ();
-	my @tmp_share;
-	foreach my $shres (@all_share_queue_reservations) {
-		foreach my $res (@all_reservations) {
-			if ($shres eq $res) {
-				push @share_queue_reservations, $shres;
-			}
-		}
-	}
-	print "share_queue_reservations array: \n";
-	print @share_queue_reservations;
-	print " \n";
+	$tot_jobs_running = $run_prem + $run_reg + $run_econ + $run_stand + $run_spec + $run_amps + $run_sys + $run_share;
+	print "number of batch jobs running (not including reservations) = $tot_jobs_running \n\n";
 	
 	
-	# remove each share queue reservation from @all_reservations array, if any, to create @reservations array
-	# alogrithm from O'Reilly Perl Cookbook
-	my %count = ();
-	foreach my $i (@all_reservations, @share_queue_reservations) { $count{$i}++ }
-
-	foreach my $e (keys %count) {
-		if ($count{$e} != 2) {
-			push @reservations, $e;
-		}
-	}
-	print scalar @reservations;  print " reservations (non-share queue)\n";
+	@reservations = `/opt/pbs/default/bin/pbs_rstat | grep ' R[0-9][0-9]' | awk '{print \$2}'`;
+	print scalar @reservations; print " reservations found \n";
 	print @reservations, "\n";
-	
-	
-	
-	my $run_shar = 0;
-	foreach my $shres (@share_queue_reservations) {
-		chomp $shres;
-		my $num_running_jobs = `cat "$targetdir/qstat.out" | grep $shres | grep " R " | wc -l`;
-		chomp $num_running_jobs;
-		$run_shar += $num_running_jobs;
-		print "share queue reservation $shres  share queue jobs running = $num_running_jobs \n";
-	}
-	print "total number of jobs running in share queue = $run_shar \n\n";
-	
+
 	my $run_resv = 0;
 	foreach my $res (@reservations) {
 		chomp $res;
@@ -262,7 +222,7 @@ if ($@ | ($cmds_len < 5)) {
 	print "total number of jobs running in reservations = $run_resv\n";
 	
 	
-	$tot_jobs_running = $run_reg + $run_econ + $run_spec + $run_prem + $run_amps + $run_shar + $run_resv;
+	$tot_jobs_running += $run_resv;
 	print "\nTotal number of batch jobs = $tot_jobs_running \n\n";
 
 	
@@ -302,125 +262,48 @@ if ($@ | ($cmds_len < 5)) {
 	
 	my $total_reservedNodes_run = 0;     # number of reserved nodes currently in use in running jobs
 	my $total_reservedNodes_free = 0;  # number of reserved nodes currently NOT in use 
+	my $reservations_processed = 0;
 	
 	my $share_nodesinuse_tot = 0;     # number of shared reserved nodes currently in use in running jobs
 	my $nShareNodes_free = 0;      # number of shared reserved nodes currently NOT in use 
 	
-	my $tot_qjob_nodes = 0;
+	my $tot_running_nodes = 0;
 	foreach my $queue (@queues) {
 			
 		$q{$queue}[0] = '-' unless ($q{$queue}[0]);   # number of jobs running in $queue
 		$q{$queue}[1] = '-' unless ($q{$queue}[1]);   # number of nodes in running jobs in $queue
 		$q{$queue}[2] = '-' unless ($q{$queue}[2]);   # number of jobs queued in $queue
 		$q{$queue}[3] = '-' unless ($q{$queue}[3]);   # number of jobs held in $queue
-		$q{$queue}[4] = '-' unless ($q{$queue}[4]);   # number of users running jobs in $queue
+		$q{$queue}[4] = '-' unless ($q{$queue}[4]);   # number of unique users with jobs in $queue
 		
-		if ($queue =~ m/system|premium|regular|economy|standby|special|ampsrt/) {
+		if ($queue =~ m/system|premium|regular|economy|standby|special|ampsrt|share/) {
 			my $queue_name = $queue;
 			
-			# print "\n grepping qstat.out for queue name $queue_name \n";
 			$q{$queue}[0] = `cat "$targetdir/qstat.out" | grep $queue_name | grep " R " | wc -l`;
 			$q{$queue}[2] = `cat "$targetdir/qstat.out" | grep $queue_name | grep " Q " | wc -l`;
 			$q{$queue}[3] = `cat "$targetdir/qstat.out" | grep $queue_name | grep " H " | wc -l`;
 			$q{$queue}[4] = `cat "$targetdir/qstat.out" | grep $queue_name | awk '{ print \$3 }' | sort | uniq | wc -l`;  # number of unique users
+			print "queue: $queue   number of unique users = $q{$queue}[4]";
 
 			my $queue_node_count = int(`cat "$targetdir/qstat-tn1.out" | grep $queue_name | grep " R " | awk '{SUM += \$6} END { print SUM }'`); 
+			if ($queue_name eq "share") {
+				$queue_node_count = int(`cat "$targetdir/qstat-tn1.out" | grep shareex | awk '{ print \$12 }' | cut -f 1 -d '/' | sort | uniq | wc -l`);
+				my $nShareNodes = int(`cat "$targetdir/pbsnodes-a.out" | grep "Qlist = " | grep -c share`);
+				$nShareNodes_free = $nShareNodes - $queue_node_count;
+				print "for share queue: queue_node_count = $queue_node_count    nShareNodes = $nShareNodes    nShareNodes_free = $nShareNodes_free \n";
+			}
 			chomp $queue_node_count;
-			print "node count for jobs running in batch queue $queue = $queue_node_count ";
+			print "node count for jobs running in queue $queue = $queue_node_count\n";
 			$q{$queue}[1] = $queue_node_count;
 			
-			$tot_qjob_nodes += $queue_node_count;
-			if ($queue_name eq "ampsrt") {   # i.e. the last queue name being processed here
-				print "\ntotal number of nodes accounted for in running batch jobs = $tot_qjob_nodes \n";
-				print "\nDifference between qstat and pbsnodes = ", $nNodes_jobs - $tot_qjob_nodes, " \n";
-				if ($nNodes_jobs > $tot_qjob_nodes) {
-					print "nodes missing from qstat parsing \n";
-				} else {
-					print "excess nodes counted in qstat parsing \n";
-				}
-			}
-		}  # for system, premium, regular, economy, standby, special and ampsrt queues
-		
-		# handling for share queue reservations - combine all of them and report them as one entry.
-		elsif ($queue eq "share") {
-			my $share_jobs   = 0;
-			my $share_qued   = 0;
-			my $share_held   = 0;
-			my $share_users  = 0;
-			my $nNodes_share = 0;
-			my $nShareNodesDown = 0;
-			
-			print "  \n";
-			foreach my $reserv (@share_queue_reservations) {
-				chomp $reserv;
-				print "\nprocessing share queue reservation  $reserv\n";
-				$share_jobs  += `cat "$targetdir/qstat.out" | grep $reserv | grep " R " | wc -l`;
-				$share_qued  += `cat "$targetdir/qstat.out" | grep $reserv | grep " Q " | wc -l`;
-				$share_held  += `cat "$targetdir/qstat.out" | grep $reserv | grep " H " | wc -l`;   # this is probably zero; see below
-				$share_users += `cat "$targetdir/qstat.out" | grep $reserv | awk '{ print \$3 }' | sort | uniq | wc -l`;
-				
-				my $full_res_name = $reserv . ".chadmin1";
-					
-				# check to see if this share queue reservation is running.  If it isn't then set the number of nodes to 0.
-				my $reservation_state = `/opt/pbs/default/bin/pbs_rstat -F $full_res_name | grep reserve_state | grep RESV_RUNNING`;
-				chomp $reservation_state;
-				print "reservation state = --->$reservation_state<---\n";
-				if ( length($reservation_state) == 0) {
-					$nNodes_share = 0;
-					print "share queue reservation $reserv is not RUNNING - number of nodes in reservation set to 0 \n";
-				}
-				else {
-					$nNodes_share = `/opt/pbs/default/bin/pbs_rstat -F $full_res_name | grep resv_nodes | grep -o ncpus | wc -l`;
-					print "number of nodes in share queue reservation $reserv:  $nNodes_share";
-					
-					# the following determines the number of unique share queue nodes currently in use
-					my $nodect = `cat "$targetdir/qstat-tn1.out" | grep $reserv | awk '{ print \$12 }' | cut -f 1 -d '/' | sort | uniq | wc -l`;
-					$share_nodesinuse_tot += $nodect;
-					print "unique node count with jobs running in share queue reservation $reserv = $nodect \n";
+			$tot_running_nodes += $queue_node_count;
+		}  # for system, premium, regular, economy, standby, special, share and ampsrt queues
 
-					$nShareNodes_free += $nNodes_share;
-						
-					#are any of the nodes in this share reservation down/offline? If so, then reduce nShareNodes_free
-					my @share_res_nodes = `/opt/pbs/default/bin/pbs_rstat -F $full_res_name | grep -Eo '(r)[0-9]+(i)[0-9]+(n)[0-9]+'`;
-					%count = ();
-					foreach my $i (@share_res_nodes, @nodes_offline) { $count{$i}++ }
-					
-					foreach my $e (keys %count) {
-						if ($count{$e} == 2) {
-							$nShareNodes_free-- ;
-							$nShareNodesDown++;
-						}
-					}
-					#print "cumulative number of nodes available in share reservations after checking offline nodes = $nShareNodes_free \n";
-				}  # if share reservation is running
-				
-			}  # for each share queue reservation
-			
-			$nShareNodes_free -= $share_nodesinuse_tot;
-			
-			print "\nnumber of shared nodes in use = $share_nodesinuse_tot \n";
-			print "number of shared nodes free = $nShareNodes_free \n";
-			print "number of shared nodes down = $nShareNodesDown \n";
-			
-			# reduce number of reported free nodes by nShareNodes_free otherwise they would be counted twice
-			$nNodes_free -= $nShareNodes_free;
-			print "number of free nodes reduced by $nShareNodes_free (nShareNodes_free).  New count = $nNodes_free \n";
-			
-			$q{$queue}[0] = $share_jobs; 
-			$q{$queue}[1] = $share_nodesinuse_tot; 
-			$q{$queue}[2] = $share_qued; 
-			
-			if ( $share_held == 0 ) {   # PBS reports HOLD share queue jobs by "share" and not by the reservation ID 
-				$share_held = `cat "$targetdir/qstat.out" | grep share | grep " H " | wc -l`;
-			}
-			
-			$q{$queue}[3] = $share_held; 
-			$q{$queue}[4] = $share_users; 
-		}  # end handling of share queue reservations
-		
-		# now process reservations that are not associated with the share queue -   
+		# now process reservations  
 		# combine all of them and report them as one entry labled "Reservations".
 		elsif ($queue eq "reserved") {
+			print "\nnumber of nodes accounted for in jobs not in reservations = $tot_running_nodes \n";
+			
 			my $reserv_jobs  = 0;
 			my $reserv_qued  = 0;
 			my $reserv_held  = 0;
@@ -428,8 +311,10 @@ if ($@ | ($cmds_len < 5)) {
 			my $nNodes_reservation = 0;  
 			my $tot_nNodes_reserved = 0;
 			
-			
 			foreach my $reserv (@reservations) {
+				$reservations_processed = 1;
+				my $nNodes_reservation_running = 0;    # number of nodes running in each reservation;
+				
 				chomp $reserv;
 				print "\nprocessing reservation - $reserv\n";
 				
@@ -439,6 +324,7 @@ if ($@ | ($cmds_len < 5)) {
 				my $reservation_state = `/opt/pbs/default/bin/pbs_rstat -F $full_res_name | grep reserve_state | grep RESV_RUNNING`;
 				chomp $reservation_state;
 				print "reservation state = --->$reservation_state<---\n";
+				
 				if ( length($reservation_state) == 0) {
 					$nNodes_reservation = 0;
 					print "reservation $reserv is not RUNNING - number of nodes in reservation set to 0 \n";
@@ -466,22 +352,26 @@ if ($@ | ($cmds_len < 5)) {
 						$nodect = `$cmd`;
 						print "node count for job $jobno in $reserv = $nodect";
 						$total_reservedNodes_run += $nodect;
-					}print " \n";
+						$tot_running_nodes += $nodect;
+						$nNodes_reservation_running += $nodect;
+					}
+					print " \n";
 					
-					$total_reservedNodes_free += ($nNodes_reservation - $nodect);
+					$total_reservedNodes_free += ($nNodes_reservation - $nNodes_reservation_running);
+					print "total number of free reserved nodes = $nNodes_reservation-$nNodes_reservation_running (nNodes_reservation - nNodes_reservation_running) = $total_reservedNodes_free \n";
 					
 					#are any of the nodes in this reservation down/offline? If so, then reduce total_reservedNodes_free
 					my @res_nodes = `/opt/pbs/default/bin/pbs_rstat -F $full_res_name | grep -Eo '(r)[0-9]+(i)[0-9]+(n)[0-9]+'`;
-					%count = ();
-					foreach my $i (@res_nodes, @nodes_offline) { $count{$i}++ }
-				
-					foreach my $e (keys %count) {
-						if ($count{$e} == 2) {
-							$total_reservedNodes_free-- ;
-							print "key count $count{$e} == 2  total_reservedNodes_free = $total_reservedNodes_free \n";  #Debug
+					my %count = ();
+					foreach my $rnode (@res_nodes, @nodes_offline) { 
+						$count{$rnode}++; 
+						if ($count{$rnode}==2) {
+							print "   ** found offline node in reservation: $rnode";
+							$total_reservedNodes_free--
 						}
 					}
-					print "number of nodes in reservation $reserv after checking offline nodes = $total_reservedNodes_free \n";
+
+					print "number of free nodes in reservation $reserv after checking offline nodes = $total_reservedNodes_free \n";
 				}  # if reservation is running
 				
 			}  # for each reservation
@@ -493,8 +383,21 @@ if ($@ | ($cmds_len < 5)) {
 			$q{$queue}[4] = $reserv_users; 
 		}  # end special handling for reservations
 		print " \n";
-			
-	}   # foreach queue
+		
+		
+				
+	}   # foreach queue - system|premium|regular|economy|standby|special|share|ampsrt and reservations
+		
+	if ($reservations_processed == 1) {
+		print "\ntotal number of nodes accounted for in running batch jobs = $tot_running_nodes \n";
+		print "\nDifference between qstat and pbsnodes = ", $nNodes_jobs - $tot_running_nodes;
+		if ($nNodes_jobs > $tot_running_nodes) {
+			print " (nodes missing from qstat parsing) \n";
+		} else {
+			print " (excess nodes counted in qstat parsing) \n";
+		}
+	}
+	print " \n";
 		
 	
 	# determine if any queues are completely empty of any jobs - those entries will skipped.
@@ -518,7 +421,7 @@ if ($@ | ($cmds_len < 5)) {
 	# Proportionally "re-allocate" all missing or excess nodes to the regular and economy queues by
 	# values consistent with the average number of nodes per job in each of those queues. Do not
 	# adjust the number of running jobs. 
-	# Not sure why this happens - maybe misunderstanding some nuance of qstat.
+	# Not sure why this even happens - maybe misunderstanding some nuance of qstat.
 	# The intent is to avoid confusion/questions if the Total Node Count would not be reported as 4032.
 	# Yes, it's a bit of a hack :-)
 	 
@@ -526,7 +429,7 @@ if ($@ | ($cmds_len < 5)) {
 	foreach my $queue (@queues) {
 		$total_nodes_jobs += $q{$queue}[1];
 	}
-	print "number of nodes accounted for in running jobs = $total_nodes_jobs \n";
+	print "\nTotal number of nodes accounted for in running jobs = $total_nodes_jobs \n";
 	
 	my $tmp_total_node_count = $total_nodes_jobs + $nNodes_free + $nShareNodes_free + $total_reservedNodes_free + $nNodes_offline;
 	print "total number of nodes accounted for = $tmp_total_node_count \n";
@@ -547,7 +450,7 @@ if ($@ | ($cmds_len < 5)) {
 		$q{regular}[1] += $delta_reg_nodes;
 		$q{economy}[1] += $delta_econ_nodes;
 		print "\nadjusted number of nodes for regular queue = $q{regular}[1]    delta = $delta_reg_nodes\n";
-		print "adjusted number of nodes for economy queue = $q{economy}[1]    delta = $delta_econ_nodes\n";
+		print "adjusted number of nodes for economy queue = $q{economy}[1]    delta = $delta_econ_nodes\n\n\n";
 	}
 	
 	
@@ -563,7 +466,7 @@ if ($@ | ($cmds_len < 5)) {
 					<td>$q{$queue}[4]</td>       <!--- number of users w/ jobs in queue  -->
 				</tr>
 			};
-			printf STATUSFILE "%12s %9d %8d %8d %8d %8d \n", $queue, $q{$queue}[0], $q{$queue}[1], $q{$queue}[2], $q{$queue}[3], $q{$queue}[0];
+			printf STATUSFILE "%12s %9d %8d %8d %8d %8d \n", $queue, $q{$queue}[0], $q{$queue}[1], $q{$queue}[2], $q{$queue}[3], $q{$queue}[4];
 		}
 	}
 	
@@ -675,7 +578,7 @@ if ($@ | ($cmds_len < 5)) {
 
 	if ($testing_mode == 0) { 
 		my $cmd = "rm -f $logfilename";
-		my $noopt = `$cmd`;
+#		my $noopt = `$cmd`;
 	}
 
 }
