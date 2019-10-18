@@ -37,7 +37,7 @@ if ( $nArgs > 0 ) {
     }
 }
 
-
+#
 # Set up output file names and directories
 #
 if ($testing_mode == 1) {
@@ -88,11 +88,13 @@ my $color = "#000000";
 eval {
         local $SIG{ALRM} = sub { die "alarm\n" };
         alarm $timeout;
-        
+	
         # throttle the demand on the PBS server
         my $sleepcmd = "sleep 10";
+        my $qstatcmd = "/opt/pbs/default/bin/qstat";
         if ($testing_mode == 1) {
         	$sleepcmd = "sleep 1";
+        	$qstatcmd = "sudo -u csgteam /glade/u/apps/ch/opt/usr/bin/qstat";
         }
         
         if ($use_qstat_cache == 0) {
@@ -206,7 +208,7 @@ if ($@ | ($nodestate_out_len == 0) | ($qstat_out_len == 0)) {
 	print "number of batch jobs running (not including reservations) = $tot_jobs_running \n\n";
 	
 	
-	@reservations = `/opt/pbs/default/bin/pbs_rstat | grep ' R[0-9][0-9]' | awk '{print \$2}'`;
+	@reservations = `/opt/pbs/default/bin/pbs_rstat | grep ' [RS][0-9][0-9]' | awk '{print \$2}'`;
 	print scalar @reservations; print " reservations found \n";
 	print @reservations, "\n";
 
@@ -318,7 +320,7 @@ if ($@ | ($nodestate_out_len == 0) | ($qstat_out_len == 0)) {
 				chomp $reserv;
 				print "\nprocessing reservation - $reserv\n";
 				
-				my $full_res_name = $reserv . ".chadmin1";
+				my $full_res_name = $reserv . ".chadmin1.ib0.cheyenne.ucar.edu";
 
 				# check to see if this reservation is running.  If it isn't then leave the number of reported nodes to 0
 				my $reservation_state = `/opt/pbs/default/bin/pbs_rstat -F $full_res_name | grep reserve_state | grep RESV_RUNNING`;
@@ -447,6 +449,15 @@ if ($@ | ($nodestate_out_len == 0) | ($qstat_out_len == 0)) {
 		my $delta_reg_nodes  = (int(0.5 + $node_diff * $q{regular}[1]/$reg_econ_nodes));
 		my $delta_econ_nodes = $node_diff - $delta_reg_nodes;
 		
+		if ($reg_econ_nodes > 0) {
+		    $delta_reg_nodes  = (int(0.5 + $node_diff * $q{regular}[1]/$reg_econ_nodes));
+		    $delta_econ_nodes = $node_diff - $delta_reg_nodes;
+		}
+
+		if ($reg_econ_nodes < 0) {
+			$reg_econ_nodes = 0;
+		}
+	
 		$q{regular}[1] += $delta_reg_nodes;
 		$q{economy}[1] += $delta_econ_nodes;
 		print "\nadjusted number of nodes for regular queue = $q{regular}[1]    delta = $delta_reg_nodes\n";
