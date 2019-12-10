@@ -69,7 +69,7 @@ my $timeout = 60;   # seconds to wait for "qstat" and "pbsnodes" commands to ret
 # by users with a command script "show_status".
 #
 open HTMLFILE, ">$targetdir/queues_table_ch.html" or die "Could not open file HTMLFILE $!";
-open STATUSFILE, ">$targetdir/show_status.out" or die "Could not open file STATUSFILE $!";
+open STATUSFILE, ">$targetdir/tmp_show_status.out" or die "Could not open file STATUSFILE $!";
 
 my $qstat_out_len = 0;
 my $nodestate_out_len = 0;
@@ -586,6 +586,9 @@ if ($@ | ($nodestate_out_len == 0) | ($qstat_out_len == 0)) {
 	close (HTMLFILE);
 	close (STATUSFILE);
 	select STDOUT;
+	
+	my $cmd = "cp $targetdir/tmp_show_status.out $targetdir/show_status.out";
+	my $noopt = `$cmd`;
 
 	if ($testing_mode == 0) { 
 		my $cmd = "rm -f $logfilename";
